@@ -12,7 +12,7 @@
 	} while (0)
 
 void
-lmvs_prepare_response_header(lmvs_headers_t* headers, lmlive_request_t* request) {
+lmvs_prepare_response_header(lmvs_headers_t* headers, lmvs_request_t* request) {
 	char content_length[32];
 	char date_buffer[64];
 

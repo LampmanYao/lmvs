@@ -12,15 +12,15 @@
 
 extern char* root_path;
 
-lmlive_request_t*
-lmlive_request_new(lmvs_sock_t* sock) {
-	lmlive_request_t* request = calloc(1, sizeof(*request));
+lmvs_request_t*
+lmvs_request_new(lmvs_sock_t* sock) {
+	lmvs_request_t* request = calloc(1, sizeof(*request));
 	request->sock = sock;
 	return request;
 }
 
 void
-lmlive_request_free(lmlive_request_t* request) {
+lmvs_request_free(lmvs_request_t* request) {
 	free(request);
 }
 
@@ -86,7 +86,7 @@ http_method(char* method) {
 }
 
 void
-lmlive_request_parse(lmlive_request_t* request) {
+lmvs_request_parse(lmvs_request_t* request) {
 	char* data;
 	char* p;
 	char* method;

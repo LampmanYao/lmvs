@@ -10,5 +10,5 @@ typedef struct lmvs_headers {
 	char buffer[1024];
 } lmvs_headers_t;
 
-void lmvs_prepare_response_header(lmvs_headers_t* headers, lmlive_request_t* request);
+void lmvs_prepare_response_header(lmvs_headers_t* headers, lmvs_request_t* request);
 

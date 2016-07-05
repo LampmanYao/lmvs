@@ -74,8 +74,9 @@ lmvs_el_io_loop(void* arg) {
 				int nrecv = lmvs_sock_recv(sock);
 				if (lmvs_fast(nrecv == 0)) {
 					unsigned int data_len = lmvs_rb_data_len(sock->rb);
-					lmlive_request_t* request = lmlive_request_new(sock);
-					lmlive_request_parse(request);
+					lmvs_request_t* request = lmvs_request_new(sock);
+					lmvs_request_parse(request);
+					lmvs_request_free(request);
 					lmvs_rb_seek(sock->rb, data_len);
 				} else {
 					/* We clear a socket here. Because of if remote peer close immediately
