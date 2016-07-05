@@ -129,7 +129,7 @@ lmlive_request_parse(lmlive_request_t* request) {
 	int in_fd;
 	struct stat buf;
 	char* buffer = NULL;
-	char infile[64] = {0};
+	char infile[512] = {0};
 
 	sprintf(infile, "%s/%s", root_path, request->uri);
 	in_fd = open(infile, O_RDWR, 0644);
