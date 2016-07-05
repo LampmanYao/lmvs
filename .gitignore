@@ -1,0 +1,8 @@
+bin/lmvs
+bin/wwwroot/
+bin/log*
+bin/nohup.out
+bin/my.pid
+src/.objs
+src/lmvs
+src/.*.swp
