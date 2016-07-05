@@ -94,6 +94,7 @@ lmvs_timer_remove(lmvs_timer_t* timer, unsigned int timerid) {
 	if (timer_node) {
 		lmvs_lfhash_delete(timer->wheels_tbl[index], timerid);
 		lmvs_lfhash_delete(timer->which_wheel_tbl, timerid);
+		free(timer_node);
 	}
 }
 
