@@ -131,7 +131,7 @@ lmlive_request_parse(lmlive_request_t* request) {
 	char* buffer = NULL;
 	char infile[512] = {0};
 
-	sprintf(infile, "%s/%s", root_path, request->uri);
+	snprintf(infile, 512, "%s/%s", root_path, request->uri);
 	in_fd = open(infile, O_RDWR, 0644);
 
 	if (in_fd > 0) {
