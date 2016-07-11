@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <sys/sendfile.h>
 
 #ifdef JEMALLOC
 #include <jemalloc/jemalloc.h>
@@ -23,19 +24,20 @@ lmvs_sock_new(int rsize) {
 	sock->fd = 0;
 	sock->sid = 0;
 	sock->rb = lmvs_rb_new(rsize);
+	sock->request = lmvs_request_new();
 	return sock;
 }
 
 void
 lmvs_sock_free(lmvs_sock_t* sock) {
 	lmvs_rb_free(sock->rb);
+	lmvs_request_free(sock->request);
 	free(sock);
 }
 
 int
 lmvs_sock_recv(lmvs_sock_t* sock) {
-	/* TODO: reduce data copy */
-	char recvbuf[READ_BUFFER_SIZE] = {0};
+	char recvbuf[READ_BUFFER_SIZE];
 	int nrecv;
 
 tryagain:
@@ -47,30 +49,53 @@ tryagain:
 
 	if (nrecv < 0) {
 		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-			return 0;
+			return sock->rb->data_len;
 		}
-		DEBUG("recv error from socket[%d]: %s", sock->fd, strerror(errno));
+		DEBUG("recv error from socket(%d): %s", sock->fd, strerror(errno));
 		return -1; /* error */
 	}
 
 	return -1; /* peer closed */
 }
 
+/*
+ * Return value:
+ *    -1 : error
+ *     0 : socket buffer is full
+ *     1 : success
+ */
 int
 lmvs_sock_send(lmvs_sock_t* sock, char* buff, int len) {
-	int nsend = 0;
-	int remain = len;
-	while (remain > 0) {
-		nsend = send(sock->fd, buff + len - remain, remain, 0);
-		if (lmvs_slow(nsend < 0)) {
-			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+	int nsend = send(sock->fd, buff, len, 0);
+	if (lmvs_fast(nsend > 0)) {
+		return nsend;
+	} else {
+		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+			return 0;
+		}
+		DEBUG("send to socket(%d) error: %s", sock->fd, strerror(errno));
+		return -1;
+	}
+}
+
+int
+lmvs_sock_sendfile(lmvs_sock_t* sock, int fd, unsigned int len) {
+	unsigned int nsend = 0;
+	while (1) {
+		int ret = sendfile(sock->fd, fd, NULL, len);
+		if (ret > 0) {
+			nsend += ret;
+			if (nsend == len) {
+				return nsend;
+			} else {
 				continue;
 			}
-			DEBUG("send(%d) error: %s", sock->fd, strerror(errno));
+		} else {
+			if (errno == EAGAIN) {
+				return nsend;
+			}
 			return -1;
 		}
-		remain -= nsend;
 	}
-	return len;
 }
 

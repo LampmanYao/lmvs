@@ -10,18 +10,97 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#define CRLF  "\r\n"
+#define CRLF2 "\r\n\r\n"
+
 extern char* root_path;
 
+static char* get_mime_type(char* uri);
+
 lmvs_request_t*
-lmvs_request_new(lmvs_sock_t* sock) {
+lmvs_request_new() {
 	lmvs_request_t* request = calloc(1, sizeof(*request));
-	request->sock = sock;
 	return request;
 }
 
 void
 lmvs_request_free(lmvs_request_t* request) {
+	close(request->fd);
 	free(request);
+}
+
+int
+lmvs_request_parse(lmvs_request_t* request, char* data) {
+	if (!strstr(data, CRLF2)) {
+		return -1;
+	}
+
+	char* p = data;
+	request->method = data;
+
+	/* The contents between the begin and the first SP is http method,
+	   so, we move p points to the first SP, and set it to '\0' */
+	while (*p != ' ') {
+		p++;
+	}
+	*p = '\0';
+
+	/* The contents between the frist SP and the second SP is URI,
+	   so, we move p points to the second SP */
+	request->uri = p + 1;
+	p = request->uri;
+
+	while (*p != ' ') {
+		p++;
+	}
+
+	*p = '\0';
+	p--;
+
+	if (request->uri - p == 0) {
+		/* Check uri only is '/' */
+		request->uri = "index.html";
+	} else {
+		request->uri++;
+	}
+	p++;
+
+	request->mime_type = get_mime_type(request->uri);
+
+	struct stat st_buf;
+	char infile[512] = {0};
+
+	snprintf(infile, 512, "%s/%s", root_path, request->uri);
+	request->fd = open(infile, O_RDWR, 0644);
+
+	if (request->fd > 0) {
+		request->http_status = "HTTP/1.1 200 OK\r\n";
+		fstat(request->fd, &st_buf);
+		request->content_length = st_buf.st_size;
+		lmvs_prepare_response_header(request);
+	} else {
+		request->http_status = "HTTP/1.1 404 Not Found\r\n";
+		request->mime_type = "text/html";
+		request->content_length = strlen(notfound_html);
+		lmvs_prepare_response_header(request);	
+	}
+
+	request->total = request->headers.length + request->content_length;
+	request->pdata = request->headers.buffer;
+	return 0;
+}
+
+void
+lmvs_request_reset(lmvs_request_t* request) {
+	request->headers.length = 0;
+	request->is_headers_sent = HEADERS_NOTSEND;
+	request->pdata = NULL;
+	request->content_length = 0;
+	request->nsend = 0;
+	request->total = 0;
+	if (request->fd > 0) {
+		close(request->fd);
+	}
 }
 
 static inline char*
@@ -65,92 +144,3 @@ get_mime_type(char* uri) {
 		return "*/*";
 	}
 }
-
-static inline char*
-http_method(char* method) {
-	if (strcmp(method, "GET") == 0) {
-		return "GET";
-	} else if (strcmp(method, "POST") == 0) {
-		return "POST";
-	} else if (strcmp(method, "DELETE") == 0) {
-		return "DELETE";
-	} else if (strcmp(method, "OPTION") == 0) {
-		return "OPTION";
-	} else if (strcmp(method, "PUT") == 0) {
-		return "PUT";
-	} else if (strcmp(method, "HEAD") == 0) {
-		return "HEAD";
-	} else {
-		return "UNKNOWN";
-	}
-}
-
-void
-lmvs_request_parse(lmvs_request_t* request) {
-	char* data;
-	char* p;
-	char* method;
-	char* uri;
-
-	data = lmvs_rb_data(request->sock->rb);
-	method = data;
-	p = method;
-
-	while (*p != ' ') {
-		p++;
-	}
-	*p = '\0';
-
-	request->method = http_method(method);
-	*p  = ' ';
-
-	uri = p + 1;
-	p = uri;
-
-	while (*p != ' ') {
-		p++;
-	}
-	*p = '\0';
-	p--;
-
-	if (uri - p == 0) {
-		uri++;
-		strcpy(request->uri, "index.html");
-	} else {
-		uri++;
-		strcpy(request->uri, uri);
-	}
-
-	p++;
-	*p = ' ';
-	request->mime_type = get_mime_type(request->uri);
-
-	lmvs_headers_t headers = {.length = 0};
-	int in_fd;
-	struct stat buf;
-	char* buffer = NULL;
-	char infile[512] = {0};
-
-	snprintf(infile, 512, "%s/%s", root_path, request->uri);
-	in_fd = open(infile, O_RDWR, 0644);
-
-	if (in_fd > 0) {
-		request->http_status = "HTTP/1.1 200 OK\r\n";
-		fstat(in_fd, &buf);
-		buffer = malloc(buf.st_size);
-		request->content_length = read(in_fd, buffer, buf.st_size);
-		lmvs_prepare_response_header(&headers, request);
-		lmvs_sock_send(request->sock, headers.buffer, headers.length);
-		lmvs_sock_send(request->sock, buffer, request->content_length);
-		free(buffer);
-		close(in_fd);
-	} else {
-		request->http_status = "HTTP/1.1 404 Not Found\r\n";
-		request->mime_type = "text/html";
-		request->content_length = strlen(notfound_html);
-		lmvs_prepare_response_header(&headers, request);
-		lmvs_sock_send(request->sock, headers.buffer, headers.length);
-		lmvs_sock_send(request->sock, notfound_html, request->content_length);
-	}
-}
-

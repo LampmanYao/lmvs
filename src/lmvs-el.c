@@ -6,6 +6,7 @@
 #include "lmvs-sockset.h"
 #include "lmvs-socket-api.h"
 #include "lmvs-request.h"
+#include "lmvs-response.h"
 
 #include <unistd.h>
 #include <stdio.h>
@@ -72,20 +73,39 @@ lmvs_el_io_loop(void* arg) {
 
 			if (lmvs_fast(lmvs_epoller_event_is_readable(ee))) {
 				int nrecv = lmvs_sock_recv(sock);
-				if (lmvs_fast(nrecv == 0)) {
-					unsigned int data_len = lmvs_rb_data_len(sock->rb);
-					lmvs_request_t* request = lmvs_request_new(sock);
-					lmvs_request_parse(request);
-					lmvs_request_free(request);
-					lmvs_rb_seek(sock->rb, data_len);
+				if (lmvs_fast(nrecv > 0)) {
+					char* data = lmvs_rb_data(sock->rb);
+					LOG_DEBUG(el->log, "\n%s", data);
+					if (lmvs_request_parse(sock->request, data) == 0) {
+						lmvs_rb_seek(sock->rb, nrecv);
+						lmvs_epoller_mod_write(el->epoller, fd, sid);
+					}
 				} else {
 					/* We clear a socket here. Because of if remote peer close immediately
-					 * after remote peer send a large amout of data, we can still read() data
-					 * from this socket. */
+					 * after remote peer send a large amout of data, we can still read()
+					 * data from this socket. */
 					lmvs_epoller_del(el->epoller, fd, sid);
 					lmvs_sockset_reset_sock(el->sockset, sid);
+					lmvs_request_reset(sock->request);
 					lmvs_timer_remove(el->timer, sid);
 					el->cur_conn--;
+				}
+			}
+
+			if (lmvs_fast(lmvs_epoller_event_is_writeable(ee))) {
+				int ret = lmvs_response(sock, sock->request);
+				if (ret == -1) {
+					lmvs_epoller_del(el->epoller, fd, sid);
+					lmvs_sockset_reset_sock(el->sockset, sid);
+					lmvs_request_reset(sock->request);
+					lmvs_timer_remove(el->timer, sid);
+					el->cur_conn--;
+				} else {
+					sock->request->nsend += ret;
+					if (sock->request->nsend == sock->request->total) {
+						lmvs_epoller_mod_read(el->epoller, fd, sid);
+						lmvs_request_reset(sock->request);
+					}
 				}
 			}
 
@@ -138,6 +158,7 @@ lmvs_el_check_timeout(lmvs_el_t* el) {
 			LOG_WARNING(el->log, "sid[%d] timeout, closing socket[%d]", sid, sock->fd);
 			lmvs_epoller_del(el->epoller, sock->fd, sid);
 			lmvs_sockset_reset_sock(el->sockset, sid);
+			lmvs_request_reset(sock->request);
 			el->cur_conn--;
 			lmvs_timer_remove(el->timer, sid);
 			head = head->next;
